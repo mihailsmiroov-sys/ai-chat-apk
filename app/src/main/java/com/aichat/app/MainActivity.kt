@@ -62,16 +62,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         setContentView(layout)
 
         webView.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            databaseEnabled = true
-            mediaPlaybackRequiresUserGesture = false
-            allowFileAccess = true
-            cacheMode = WebSettings.LOAD_DEFAULT
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString = "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36"
-        }
-
+    javaScriptEnabled = true
+    domStorageEnabled = true
+    databaseEnabled = true
+    mediaPlaybackRequiresUserGesture = false
+    allowFileAccess = true
+    allowContentAccess = true
+    cacheMode = WebSettings.LOAD_DEFAULT
+    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+    userAgentString = "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    javaScriptCanOpenWindowsAutomatically = true
+    setSupportMultipleWindows(false)
+    builtInZoomControls = false
+    displayZoomControls = false
+}
         // TTS интерфейс
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
