@@ -10,6 +10,7 @@
     android:allowBackup="true"
     android:icon="@android:color/black"
     android:label="AI Chat"
+    android:theme="@style/AppTheme"
     android:usesCleartextTraffic="false">
 
         <activity
