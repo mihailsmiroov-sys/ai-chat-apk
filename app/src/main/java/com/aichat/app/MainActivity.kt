@@ -56,6 +56,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         ))
         setContentView(layout)
 
+        checkPermissions()
+        startWatchService()
+
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -146,6 +149,25 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         webView.webViewClient = object : WebViewClient() {}
         webView.loadUrl("https://dazzling-dragon-c85a31.netlify.app/")
+    }
+
+    private fun startWatchService() {
+        val intent = Intent(this, WatchService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
+    private fun checkPermissions() {
+        val perms = mutableListOf<String>()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                perms.add(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (perms.isNotEmpty()) requestPermissions(perms.toTypedArray(), 2001)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
