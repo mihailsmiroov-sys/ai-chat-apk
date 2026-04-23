@@ -56,9 +56,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         ))
         setContentView(layout)
 
-        checkPermissions()
-        startWatchService()
-
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -71,7 +68,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             userAgentString = "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
         }
 
-        // TTS
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
             fun speak(text: String) { tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts") }
@@ -81,7 +77,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             fun isSpeaking(): Boolean = tts.isSpeaking
         }, "AndroidTTS")
 
-        // Поделиться
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
             fun share(text: String) {
@@ -95,7 +90,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
         }, "AndroidShare")
 
-        // Прокси для API запросов
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
             fun sendRequest(url: String, body: String, apiKey: String, callbackId: String) {
@@ -149,25 +143,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         webView.webViewClient = object : WebViewClient() {}
         webView.loadUrl("https://dazzling-dragon-c85a31.netlify.app/")
-    }
-
-    private fun startWatchService() {
-        val intent = Intent(this, WatchService::class.java)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
-    }
-
-    private fun checkPermissions() {
-        val perms = mutableListOf<String>()
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
-                != android.content.pm.PackageManager.PERMISSION_GRANTED)
-                perms.add(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-        if (perms.isNotEmpty()) requestPermissions(perms.toTypedArray(), 2001)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
