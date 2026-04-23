@@ -99,7 +99,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     .post(requestBody)
                     .addHeader("Authorization", "Bearer $apiKey")
                     .addHeader("Content-Type", "application/json")
-                    .addHeader("HTTP-Referer", "https://dazzling-dragon-c85a31.netlify.app")
+                    .addHeader("HTTP-Referer", "https://mihailsmiroov-sys.github.io/ai-chat-apk/")
                     .addHeader("X-Title", "AI Chat App")
                     .build()
 
@@ -142,7 +142,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
 
         webView.webViewClient = object : WebViewClient() {}
-        webView.loadUrl("https://dazzling-dragon-c85a31.netlify.app/")
+        webView.loadUrl("https://mihailsmiroov-sys.github.io/ai-chat-apk/")
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
