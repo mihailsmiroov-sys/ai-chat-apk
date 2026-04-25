@@ -289,28 +289,42 @@ textarea.field-input { resize: vertical; min-height: 80px; }
     <div class="api-hint">Получить: <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></div>
     <div class="field-label">Модель</div>
     <select class="field-input" id="model-select">
-      <optgroup label="── Gemini (платные) ──">
+      <optgroup label="── Gemini (Google) ──">
         <option value="google/gemini-3-flash-preview">⭐ Gemini 3 Flash Preview</option>
-        <option value="google/gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite Preview</option>
-        <option value="google/gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
+        <option value="google/gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite</option>
+        <option value="google/gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
         <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-        <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
         <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
+        <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash</option>
       </optgroup>
       <optgroup label="── Бесплатные ──">
-        <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B</option>
-        <option value="deepseek/deepseek-chat-v3-0324:free">DeepSeek V3</option>
-        <option value="qwen/qwen3-235b-a22b:free">Qwen3 235B</option>
-        <option value="google/gemma-3-27b-it:free">Gemma 3 27B</option>
-        <option value="mistralai/mistral-7b-instruct:free">Mistral 7B</option>
+        <option value="google/gemma-3-27b-it:free">Gemma 3 27B (бесплатный)</option>
+        <option value="google/gemma-3-12b-it:free">Gemma 3 12B (бесплатный)</option>
+        <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (бесплатный)</option>
+        <option value="meta-llama/llama-4-maverick:free">Llama 4 Maverick (бесплатный)</option>
+        <option value="meta-llama/llama-4-scout:free">Llama 4 Scout (бесплатный)</option>
+        <option value="deepseek/deepseek-r1:free">DeepSeek R1 (бесплатный)</option>
+        <option value="deepseek/deepseek-chat-v3-0324:free">DeepSeek V3 (бесплатный)</option>
+        <option value="qwen/qwen3-235b-a22b:free">Qwen3 235B (бесплатный)</option>
+        <option value="nvidia/llama-3.1-nemotron-nano-8b-v1:free">Nvidia Nemotron 8B (бесплатный)</option>
+        <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 (бесплатный)</option>
+        <option value="openrouter/auto">🔀 Авто (лучшая бесплатная)</option>
       </optgroup>
       <optgroup label="── OpenAI ──">
         <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
         <option value="openai/gpt-4o">GPT-4o</option>
+        <option value="openai/gpt-4.1">GPT-4.1</option>
       </optgroup>
       <optgroup label="── Anthropic ──">
-        <option value="anthropic/claude-3-5-haiku">Claude 3.5 Haiku</option>
-        <option value="anthropic/claude-sonnet-4-5">Claude Sonnet 4.5</option>
+        <option value="anthropic/claude-sonnet-4.6">Claude Sonnet 4.6 ⭐</option>
+        <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku</option>
+        <option value="anthropic/claude-3.7-sonnet">Claude 3.7 Sonnet</option>
+      </optgroup>
+      <optgroup label="── DeepSeek ──">
+        <option value="deepseek/deepseek-v4-pro">DeepSeek V4 Pro ($1.74/млн)</option>
+        <option value="deepseek/deepseek-v4-flash">DeepSeek V4 Flash ($0.14/млн)</option>
+        <option value="deepseek/deepseek-chat-v3-0324">DeepSeek V3 (платный)</option>
+        <option value="deepseek/deepseek-r1">DeepSeek R1 (платный)</option>
       </optgroup>
     </select>
     <div class="section-divider"></div>
@@ -379,17 +393,29 @@ const MODEL_LABELS = {
   'google/gemini-3.1-flash-lite-preview':'Gemini 3.1 Flash Lite',
   'google/gemini-3.1-pro-preview':'Gemini 3.1 Pro',
   'google/gemini-2.5-flash':'Gemini 2.5 Flash',
-  'google/gemini-2.5-flash-lite':'Gemini 2.5 Flash Lite',
   'google/gemini-2.5-pro':'Gemini 2.5 Pro',
+  'google/gemini-2.0-flash-001':'Gemini 2.0 Flash',
+  'google/gemma-3-27b-it:free':'Gemma 3 27B',
+  'google/gemma-3-12b-it:free':'Gemma 3 12B',
   'meta-llama/llama-3.3-70b-instruct:free':'Llama 3.3 70B',
+  'meta-llama/llama-4-maverick:free':'Llama 4 Maverick',
+  'meta-llama/llama-4-scout:free':'Llama 4 Scout',
+  'deepseek/deepseek-r1:free':'DeepSeek R1',
   'deepseek/deepseek-chat-v3-0324:free':'DeepSeek V3',
   'qwen/qwen3-235b-a22b:free':'Qwen3 235B',
-  'google/gemma-3-27b-it:free':'Gemma 3 27B',
-  'mistralai/mistral-7b-instruct:free':'Mistral 7B',
+  'nvidia/llama-3.1-nemotron-nano-8b-v1:free':'Nvidia Nemotron 8B',
+  'mistralai/mistral-small-3.1-24b-instruct:free':'Mistral Small 3.1',
+  'openrouter/auto':'Авто',
   'openai/gpt-4o-mini':'GPT-4o Mini',
   'openai/gpt-4o':'GPT-4o',
-  'anthropic/claude-3-5-haiku':'Claude 3.5 Haiku',
-  'anthropic/claude-sonnet-4-5':'Claude Sonnet 4.5',
+  'openai/gpt-4.1':'GPT-4.1',
+  'anthropic/claude-sonnet-4.6':'Claude Sonnet 4.6',
+  'anthropic/claude-3.5-haiku':'Claude 3.5 Haiku',
+  'anthropic/claude-3.7-sonnet':'Claude 3.7 Sonnet',
+  'deepseek/deepseek-v4-pro':'DeepSeek V4 Pro',
+  'deepseek/deepseek-v4-flash':'DeepSeek V4 Flash',
+  'deepseek/deepseek-chat-v3-0324':'DeepSeek V3',
+  'deepseek/deepseek-r1':'DeepSeek R1',
 };
 
 // ── SETTINGS ──
