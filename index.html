@@ -202,6 +202,11 @@ textarea.field-input { resize: vertical; min-height: 80px; }
 .camera-more.open { display:flex; }
 .camera-more-box { background:var(--sidebar-bg); border:1px solid var(--border); border-radius:16px; padding:20px; width:min(360px,100%); }
 .camera-more-title { font-size:16px; font-weight:600; margin-bottom:14px; }
+.modal-box { position:relative; }
+.modal-close { position:absolute; top:12px; right:12px; width:30px; height:30px; border:none; border-radius:50%; background:var(--surface); color:var(--text-dim); font-size:20px; line-height:1; cursor:pointer; }
+.modal-close:hover { color:var(--text); background:var(--surface2); }
+.model-meta { margin-top:6px; font-size:11px; color:var(--text-dimmer); }
+.permission-copy { color:var(--text-dim); line-height:1.55; font-size:14px; margin-bottom:16px; }
 </style>
 </head>
 <body>
@@ -284,10 +289,9 @@ textarea.field-input { resize: vertical; min-height: 80px; }
         <input type="file" accept="image/*" multiple style="display:none" onchange="handleImage(event)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
       </label>
-      <label class="input-btn" title="Сделать фото">
-        <input type="file" accept="image/*" capture="environment" style="display:none" onchange="handleCameraImage(event)">
+      <button class="input-btn" onclick="openNativeCamera()" title="Сделать фото">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-      </label>
+      </button>
       <button id="mic-btn" class="input-btn" onclick="toggleVoice()" title="Голосовой ввод">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
       </button>
@@ -304,6 +308,7 @@ textarea.field-input { resize: vertical; min-height: 80px; }
 <!-- SETTINGS MODAL -->
 <div class="modal-overlay" id="settings-modal">
   <div class="modal-box">
+    <button class="modal-close" onclick="closeSettings()" title="Закрыть">×</button>
     <div class="modal-title">⚙️ Настройки</div>
     <div class="field-label">API ключ OpenRouter</div>
     <input class="field-input" type="password" id="api-key-input" placeholder="sk-or-v1-...">
@@ -330,6 +335,7 @@ textarea.field-input { resize: vertical; min-height: 80px; }
       <div class="diag-item"><span>OpenRouter</span><span class="diag-status" id="diag-openrouter">Не проверено</span></div>
       <div class="diag-item"><span>Микрофон</span><span class="diag-status" id="diag-mic">Не проверено</span></div>
       <div class="diag-item"><span>Озвучка</span><span class="diag-status" id="diag-tts">Не проверено</span></div>
+      <div class="diag-item"><span>Активная модель</span><span class="diag-status" id="diag-model">Не проверено</span></div>
       <button class="diag-btn" type="button" onclick="runDiagnostics()">Проверить</button>
     </div>
     <div class="section-divider"></div>
@@ -350,6 +356,7 @@ textarea.field-input { resize: vertical; min-height: 80px; }
 <!-- PROMPT MODAL -->
 <div class="modal-overlay" id="prompt-modal">
   <div class="modal-box">
+    <button class="modal-close" onclick="closePromptModal()" title="Закрыть">×</button>
     <div class="modal-title">✏️ Системный промпт</div>
     <div class="field-label">Задай роль или поведение модели</div>
     <textarea class="field-input" id="system-prompt-input" placeholder="Например: Ты опытный бизнес-консультант. Отвечай кратко и по делу. Всегда предлагай конкретные шаги."></textarea>
@@ -363,6 +370,18 @@ textarea.field-input { resize: vertical; min-height: 80px; }
 </div>
 
 <div id="toast"></div>
+<div class="modal-overlay" id="permissions-modal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closePermissionsModal()" title="Закрыть">×</button>
+    <div class="modal-title">Разрешения</div>
+    <div class="permission-copy">Чтобы работали голосовой ввод, камера и уведомления, приложению нужны разрешения. Нажми кнопку ниже и подтверди запросы Android по очереди.</div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closePermissionsModal()">Позже</button>
+      <button class="btn btn-primary" onclick="requestInitialPermissions()">Выдать разрешения</button>
+      <button class="btn btn-ghost" onclick="openAppSettings()">Настройки приложения</button>
+    </div>
+  </div>
+</div>
 <div class="camera-more" id="camera-more">
   <div class="camera-more-box">
     <div class="camera-more-title">Фото добавлено</div>
@@ -418,6 +437,7 @@ const RESPONSE_HINTS = {
   normal: 'Отвечай обычной длиной: понятно, структурно и с нужными деталями.',
   detailed: 'Отвечай подробно: объясняй причины, шаги и возможные варианты.'
 };
+let lastSentModelId = '';
 
 const MODEL_LABELS = {
   'qwen/qwen3.5-flash-02-23':'Qwen 3.5 Flash',
@@ -766,10 +786,11 @@ function buildMsgHTML(m, imgUrls = []) {
     </div>`;
   }
   const id = m.id || '';
+  const meta = m.modelLabel ? `<div class="model-meta">Ответ от: ${escHtml(m.modelLabel)} <span>${escHtml(m.modelId || '')}</span></div>` : '';
   return `<div class="msg assistant" data-msg-id="${id}">
     <div class="msg-row">
       <div class="gem-avatar">✦</div>
-      <div class="content">${formatMarkdown(m.text)}</div>
+      <div class="content">${formatMarkdown(m.text)}${meta}</div>
     </div>
     <div class="msg-actions">
       <button class="action-btn" onclick="speakText('${escAttr(m.text)}', this)">🔊 Озвучить</button>
@@ -834,9 +855,7 @@ function addImageFiles(files, fromCamera) {
     const reader = new FileReader();
     reader.onload = ev => {
       const dataUrl = ev.target.result;
-      pendingImages.push({ id: Date.now().toString() + Math.random().toString(36).slice(2,6), base64: dataUrl.split(',')[1], mimeType: file.type, dataUrl });
-      renderImagePreviews();
-      if (fromCamera) openCameraMore();
+      addImageDataUrl(dataUrl, file.type, fromCamera);
     };
     reader.readAsDataURL(file);
   });
@@ -853,6 +872,36 @@ function removeImage(index) {
 }
 function openCameraMore() { document.getElementById('camera-more').classList.add('open'); }
 function closeCameraMore() { document.getElementById('camera-more').classList.remove('open'); }
+
+function openNativeCamera() {
+  if (window.AndroidApp) {
+    window.AndroidApp.openCamera();
+    return;
+  }
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.capture = 'environment';
+  input.onchange = e => handleCameraImage(e);
+  input.click();
+}
+
+window._androidCameraResult = function(dataUrl) {
+  addImageDataUrl(dataUrl, 'image/jpeg', true);
+};
+window._androidCameraCancelled = function() {};
+window._androidCameraError = function(message) { showToast(message || 'Камера недоступна'); };
+
+function addImageDataUrl(dataUrl, mimeType = 'image/jpeg', fromCamera = false) {
+  pendingImages.push({
+    id: Date.now().toString() + Math.random().toString(36).slice(2,6),
+    base64: dataUrl.split(',')[1],
+    mimeType: dataUrl.match(/data:(.*?);/)?.[1] || mimeType,
+    dataUrl
+  });
+  renderImagePreviews();
+  if (fromCamera) openCameraMore();
+}
 
 // ── VOICE ──
 function initVoice() {
@@ -943,10 +992,11 @@ async function doRequest(chat, imgData) {
 
   try {
     const model = getModeModel();
+    lastSentModelId = model;
     const reply = await callOpenRouter(getApiKey(), model, chat.messages, imgData, abortController.signal);
     removeTyping();
     const aId = Date.now().toString() + 'a';
-    const aMsg = { id: aId, role: 'assistant', text: reply };
+    const aMsg = { id: aId, role: 'assistant', text: reply, modelId: model, modelLabel: MODEL_LABELS[model] || model };
     chat.messages.push(aMsg);
     await saveChatToDB(chat);
     appendMsgToDOM(aMsg, null, false);
@@ -1100,7 +1150,24 @@ async function runDiagnostics() {
   }
   set('diag-mic', (window.SpeechRecognition || window.webkitSpeechRecognition || navigator.mediaDevices?.getUserMedia) ? 'Доступен' : 'Нет поддержки', true);
   set('diag-tts', (window.AndroidTTS || window.speechSynthesis) ? 'Доступна' : 'Нет поддержки', !!(window.AndroidTTS || window.speechSynthesis));
+  const activeModel = getModeModel();
+  set('diag-model', `${MODEL_LABELS[activeModel] || activeModel} (${activeModel})`, true);
 }
+
+function closePermissionsModal() { document.getElementById('permissions-modal').classList.remove('open'); }
+function openPermissionsModal() { document.getElementById('permissions-modal').classList.add('open'); }
+function requestInitialPermissions() {
+  if (window.AndroidApp) window.AndroidApp.requestInitialPermissions();
+  else requestMicPermission();
+}
+function openAppSettings() {
+  if (window.AndroidApp) window.AndroidApp.openAppSettings();
+}
+window._androidPermissionResult = function() {
+  localStorage.setItem('permissions_prompted', '1');
+  closePermissionsModal();
+  runDiagnostics();
+};
 function useChip(el) { document.getElementById('input').value = el.textContent; sendMessage(false); }
 function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px'; }
 function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -1159,7 +1226,7 @@ async function init() {
   renderChatList();
   showWelcome();
   if (!hasApiKey()) setTimeout(openSettings, 600);
-  requestMicPermission();
+  if (!localStorage.getItem('permissions_prompted')) setTimeout(openPermissionsModal, 900);
 
   // закрытие модалок по клику вне
   document.querySelectorAll('.modal-overlay').forEach(m => {

@@ -1,12 +1,18 @@
 package com.aichat.app
 
 import android.annotation.SuppressLint
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Base64
 import android.webkit.*
 import android.widget.LinearLayout
 import android.graphics.Color
@@ -16,6 +22,7 @@ import java.util.Locale
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
@@ -24,6 +31,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var tts: TextToSpeech
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val FILE_CHOOSER_REQUEST = 1001
+    private val CAMERA_REQUEST = 1002
+    private val PERMISSIONS_REQUEST = 1003
     private val httpClient = OkHttpClient()
     private val prefs by lazy { getSharedPreferences("ai_chat_secure", MODE_PRIVATE) }
 
@@ -91,6 +100,34 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 }
             }
         }, "AndroidShare")
+
+        webView.addJavascriptInterface(object {
+            @android.webkit.JavascriptInterface
+            fun openCamera() {
+                runOnUiThread {
+                    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(arrayOf(Manifest.permission.CAMERA), CAMERA_REQUEST)
+                    } else {
+                        launchCamera()
+                    }
+                }
+            }
+
+            @android.webkit.JavascriptInterface
+            fun requestInitialPermissions() {
+                runOnUiThread { requestNeededPermissions() }
+            }
+
+            @android.webkit.JavascriptInterface
+            fun openAppSettings() {
+                runOnUiThread {
+                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                }
+            }
+        }, "AndroidApp")
 
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
@@ -171,6 +208,22 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == CAMERA_REQUEST) {
+            val bitmap = data?.extras?.get("data") as? Bitmap
+            if (resultCode == Activity.RESULT_OK && bitmap != null) {
+                val out = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                val base64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+                val dataUrl = "data:image/jpeg;base64,$base64"
+                runOnUiThread {
+                    webView.evaluateJavascript("window._androidCameraResult(${JSONObject.quote(dataUrl)})", null)
+                }
+            } else {
+                runOnUiThread { webView.evaluateJavascript("window._androidCameraCancelled && window._androidCameraCancelled()", null) }
+            }
+            return
+        }
+
         if (requestCode == FILE_CHOOSER_REQUEST) {
             val uris = if (resultCode == Activity.RESULT_OK) {
                 when {
@@ -182,6 +235,44 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             filePathCallback?.onReceiveValue(uris)
             filePathCallback = null
         }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == CAMERA_REQUEST) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) launchCamera()
+            else webView.evaluateJavascript("window._androidPermissionResult && window._androidPermissionResult('camera', false)", null)
+            return
+        }
+        if (requestCode == PERMISSIONS_REQUEST) {
+            webView.evaluateJavascript("window._androidPermissionResult && window._androidPermissionResult('initial', true)", null)
+        }
+    }
+
+    private fun launchCamera() {
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        if (intent.resolveActivity(packageManager) != null) {
+            startActivityForResult(intent, CAMERA_REQUEST)
+        } else {
+            webView.evaluateJavascript("window._androidCameraError && window._androidCameraError('Камера недоступна')", null)
+        }
+    }
+
+    private fun requestNeededPermissions() {
+        val permissions = mutableListOf<String>()
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.CAMERA)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (permissions.isNotEmpty()) requestPermissions(permissions.toTypedArray(), PERMISSIONS_REQUEST)
+        else webView.evaluateJavascript("window._androidPermissionResult && window._androidPermissionResult('initial', true)", null)
     }
 
     private fun sendProxyResult(callbackId: String, response: String?, error: String?) {
