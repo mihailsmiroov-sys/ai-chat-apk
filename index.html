@@ -1082,10 +1082,15 @@ async function callOpenRouter(apiKey, model, messages, imgData = [], signal) {
           else resolve(text);
         } catch(e) { reject(new Error('Ошибка парсинга: ' + e.message)); }
       };
-      window.AndroidProxy.sendRequest(
-        'https://openrouter.ai/api/v1/chat/completions',
-        bodyStr, callbackId
-      );
+      try {
+        window.AndroidProxy.sendRequest(
+          'https://openrouter.ai/api/v1/chat/completions',
+          bodyStr, callbackId
+        );
+      } catch (e) {
+        window._proxyCallback = null;
+        reject(new Error(e.message || 'Android proxy error'));
+      }
     });
   }
 

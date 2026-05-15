@@ -145,12 +145,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
             fun sendRequest(url: String, body: String, callbackId: String) {
+                try {
                 if (url != OPENROUTER_CHAT_URL) {
                     sendProxyResult(callbackId, null, "Запросы разрешены только к OpenRouter")
                     return
                 }
 
-                val apiKey = prefs.getString("openrouter_api_key", "") ?: ""
+                val apiKey = (prefs.getString("openrouter_api_key", "") ?: "")
+                    .trim()
+                    .replace(Regex("[\\r\\n\\t]"), "")
                 if (apiKey.isBlank()) {
                     sendProxyResult(callbackId, null, "Укажите API ключ OpenRouter")
                     return
@@ -179,6 +182,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                         }
                     }
                 })
+                } catch (e: Exception) {
+                    sendProxyResult(callbackId, null, e.message ?: e.javaClass.simpleName)
+                }
             }
         }, "AndroidProxy")
 
