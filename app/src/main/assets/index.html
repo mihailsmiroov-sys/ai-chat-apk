@@ -386,10 +386,7 @@ textarea.field-input { resize: vertical; min-height: 80px; }
   <div class="camera-more-box">
     <div class="camera-more-title">Фото добавлено</div>
     <div class="modal-btns">
-      <label class="btn btn-ghost" style="display:inline-flex;align-items:center;cursor:pointer">
-        Сделать ещё
-        <input type="file" accept="image/*" capture="environment" style="display:none" onchange="handleCameraImage(event)">
-      </label>
+      <button class="btn btn-ghost" onclick="takeAnotherPhoto()">Сделать ещё</button>
       <button class="btn btn-primary" onclick="closeCameraMore()">Продолжить в чате</button>
     </div>
   </div>
@@ -872,6 +869,10 @@ function removeImage(index) {
 }
 function openCameraMore() { document.getElementById('camera-more').classList.add('open'); }
 function closeCameraMore() { document.getElementById('camera-more').classList.remove('open'); }
+function takeAnotherPhoto() {
+  closeCameraMore();
+  openNativeCamera();
+}
 
 function openNativeCamera() {
   if (window.AndroidApp) {
@@ -974,13 +975,45 @@ async function sendMessage(isVoice = false) {
   appendMsgToDOM(userMsg, imgData.map(i => i.dataUrl), true);
   input.value = ''; autoResize(input); removeImage();
   await doRequest(chat, imgData);
+  await maybeGenerateChatTitle(chat);
 }
 
 function makeChatTitle(text, imageCount = 0, isVoice = false) {
   const cleaned = text.replace(/\s+/g, ' ').trim();
-  if (cleaned) return cleaned.length > 42 ? cleaned.slice(0, 39) + '...' : cleaned;
+  if (cleaned) {
+    const words = cleaned.split(' ').slice(0, 6).join(' ');
+    return words.length > 42 ? words.slice(0, 39) + '...' : words;
+  }
   if (imageCount) return imageCount > 1 ? `Чат с ${imageCount} фото` : 'Чат с фото';
   return isVoice ? 'Голосовой чат' : 'Новый чат';
+}
+
+async function maybeGenerateChatTitle(chat) {
+  const userMessages = chat.messages.filter(m => m.role === 'user' && (m.text || '').trim());
+  if (chat.aiTitleDone || userMessages.length < 3 || !hasApiKey()) return;
+  const source = userMessages.slice(-3).map((m, i) => `${i + 1}. ${m.text.trim()}`).join('\n');
+  const fallback = makeChatTitle(userMessages[0]?.text || '', 0, false);
+  const prompt = `Create a concise Russian title for this chat in 3-6 words. Return only the title, no quotes, no period.\n\nUser messages:\n${source}`;
+  try {
+    const title = await callOpenRouter(getApiKey(), getModeModel(1), [{ role: 'user', text: prompt }], [], new AbortController().signal);
+    chat.title = sanitizeChatTitle(title) || fallback;
+  } catch(e) {
+    chat.title = fallback;
+  }
+  chat.aiTitleDone = true;
+  document.getElementById('chat-title').textContent = chat.title;
+  await saveChatToDB(chat);
+  renderChatList();
+}
+
+function sanitizeChatTitle(title) {
+  return (title || '')
+    .replace(/^["'«»“”]+|["'«»“”.]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .slice(0, 6)
+    .join(' ');
 }
 
 async function doRequest(chat, imgData) {
