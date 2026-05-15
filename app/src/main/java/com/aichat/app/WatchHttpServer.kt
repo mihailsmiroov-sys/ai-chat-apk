@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit
  */
 class WatchHttpServer(
     private val context: Context,
-    private val tts: TextToSpeech
+    private val tts: TextToSpeech?
 ) : NanoHTTPD(8765) {
 
     private val TAG = "WatchHttpServer"
@@ -126,20 +126,21 @@ class WatchHttpServer(
         val json = JSONObject(readBody(session))
         val text = json.optString("text", "")
         if (text.isEmpty()) return error("No text")
+        val speaker = tts ?: return error("TTS is not available")
 
         val latch = CountDownLatch(1)
 
         mainHandler.post {
-            tts.language = Locale("ru", "RU")
+            speaker.language = Locale("ru", "RU")
 
             // Слушатель завершения произношения
-            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            speaker.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) { latch.countDown() }
                 override fun onError(utteranceId: String?) { latch.countDown() }
             })
 
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "WATCH_TTS")
+            speaker.speak(text, TextToSpeech.QUEUE_FLUSH, null, "WATCH_TTS")
         }
 
         // Ждём максимум 60 секунд (длинный ответ)
@@ -150,7 +151,7 @@ class WatchHttpServer(
     }
 
     private fun handleStopTTS(): Response {
-        mainHandler.post { tts.stop() }
+        mainHandler.post { tts?.stop() }
         return ok(JSONObject().put("ok", true))
     }
 

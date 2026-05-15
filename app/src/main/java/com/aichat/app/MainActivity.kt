@@ -11,6 +11,7 @@ import android.webkit.*
 import android.widget.LinearLayout
 import android.graphics.Color
 import androidx.appcompat.app.AppCompatActivity
+import org.json.JSONObject
 import java.util.Locale
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
@@ -24,6 +25,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val FILE_CHOOSER_REQUEST = 1001
     private val httpClient = OkHttpClient()
+    private val prefs by lazy { getSharedPreferences("ai_chat_secure", MODE_PRIVATE) }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
@@ -64,7 +66,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             allowFileAccess = true
             allowContentAccess = true
             cacheMode = WebSettings.LOAD_DEFAULT
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             userAgentString = "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
         }
 
@@ -92,10 +94,34 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
-            fun sendRequest(url: String, body: String, apiKey: String, callbackId: String) {
+            fun getApiKey(): String = prefs.getString("openrouter_api_key", "") ?: ""
+
+            @android.webkit.JavascriptInterface
+            fun setApiKey(apiKey: String) {
+                prefs.edit().putString("openrouter_api_key", apiKey.trim()).apply()
+            }
+
+            @android.webkit.JavascriptInterface
+            fun hasApiKey(): Boolean = !getApiKey().isBlank()
+        }, "AndroidKeyStore")
+
+        webView.addJavascriptInterface(object {
+            @android.webkit.JavascriptInterface
+            fun sendRequest(url: String, body: String, callbackId: String) {
+                if (url != OPENROUTER_CHAT_URL) {
+                    sendProxyResult(callbackId, null, "Запросы разрешены только к OpenRouter")
+                    return
+                }
+
+                val apiKey = prefs.getString("openrouter_api_key", "") ?: ""
+                if (apiKey.isBlank()) {
+                    sendProxyResult(callbackId, null, "Укажите API ключ OpenRouter")
+                    return
+                }
+
                 val requestBody = body.toRequestBody("application/json".toMediaType())
                 val request = Request.Builder()
-                    .url(url)
+                    .url(OPENROUTER_CHAT_URL)
                     .post(requestBody)
                     .addHeader("Authorization", "Bearer $apiKey")
                     .addHeader("Content-Type", "application/json")
@@ -105,16 +131,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
                 httpClient.newCall(request).enqueue(object : Callback {
                     override fun onFailure(call: Call, e: IOException) {
-                        val escaped = e.message?.replace("'", "\\'") ?: "Network error"
-                        runOnUiThread {
-                            webView.evaluateJavascript("window._proxyCallback('$callbackId', null, '$escaped')", null)
-                        }
+                        sendProxyResult(callbackId, null, e.message ?: "Network error")
                     }
                     override fun onResponse(call: Call, response: Response) {
                         val responseBody = response.body?.string() ?: ""
-                        val escaped = responseBody.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
-                        runOnUiThread {
-                            webView.evaluateJavascript("window._proxyCallback('$callbackId', '$escaped', null)", null)
+                        if (!response.isSuccessful) {
+                            sendProxyResult(callbackId, null, responseBody.ifBlank { "HTTP ${response.code}" })
+                        } else {
+                            sendProxyResult(callbackId, responseBody, null)
                         }
                     }
                 })
@@ -132,7 +156,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             ): Boolean {
                 this@MainActivity.filePathCallback?.onReceiveValue(null)
                 this@MainActivity.filePathCallback = filePathCallback
-                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                val intent = fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "image/*"
                 }
@@ -142,18 +166,32 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
 
         webView.webViewClient = object : WebViewClient() {}
-        webView.loadUrl("https://mihailsmiroov-sys.github.io/ai-chat-apk/")
+        webView.loadUrl("file:///android_asset/index.html")
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == FILE_CHOOSER_REQUEST) {
-            if (resultCode == Activity.RESULT_OK && data?.data != null) {
-                filePathCallback?.onReceiveValue(arrayOf(data.data!!))
-            } else {
-                filePathCallback?.onReceiveValue(null)
-            }
+            val uris = if (resultCode == Activity.RESULT_OK) {
+                when {
+                    data?.clipData != null -> Array(data.clipData!!.itemCount) { i -> data.clipData!!.getItemAt(i).uri }
+                    data?.data != null -> arrayOf(data.data!!)
+                    else -> null
+                }
+            } else null
+            filePathCallback?.onReceiveValue(uris)
             filePathCallback = null
+        }
+    }
+
+    private fun sendProxyResult(callbackId: String, response: String?, error: String?) {
+        val payload = JSONObject().apply {
+            put("id", callbackId)
+            put("response", response)
+            put("error", error)
+        }
+        runOnUiThread {
+            webView.evaluateJavascript("window._proxyCallback(${payload})", null)
         }
     }
 
@@ -166,5 +204,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         tts.stop()
         tts.shutdown()
         super.onDestroy()
+    }
+
+    companion object {
+        private const val OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
     }
 }

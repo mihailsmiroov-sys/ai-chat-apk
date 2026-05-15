@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, mihailsmiroov-sys-patch-1 ]
   workflow_dispatch:
 
 jobs:
@@ -18,15 +18,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Gradle 8.0
-        run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.0-bin.zip
-          unzip -q gradle-8.0-bin.zip
-          export PATH=$PWD/gradle-8.0/bin:$PATH
-          echo "$PWD/gradle-8.0/bin" >> $GITHUB_PATH
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Build APK
-        run: gradle assembleRelease
+        run: ./gradlew assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

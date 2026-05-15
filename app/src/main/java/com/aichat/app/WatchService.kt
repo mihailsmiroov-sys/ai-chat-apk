@@ -59,7 +59,7 @@ class WatchService : Service() {
 
     private fun startHttpServer() {
         try {
-            httpServer = WatchHttpServer(applicationContext, tts!!)
+            httpServer = WatchHttpServer(applicationContext, tts)
             httpServer!!.start()
             Log.d(TAG, "HTTP server started on port 8765")
         } catch (e: Exception) {
