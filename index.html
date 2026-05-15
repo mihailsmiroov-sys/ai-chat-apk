@@ -483,10 +483,15 @@ function getApiKey() {
   return localStorage.getItem('or_key') || '';
 }
 function setApiKey(key) {
-  if (window.AndroidKeyStore) window.AndroidKeyStore.setApiKey(key);
-  else if (key) localStorage.setItem('or_key', key);
+  const clean = sanitizeApiKey(key);
+  if (window.AndroidKeyStore) window.AndroidKeyStore.setApiKey(clean);
+  else if (clean) localStorage.setItem('or_key', clean);
 }
-function hasApiKey() { return !!getApiKey(); }
+function sanitizeApiKey(key) {
+  const clean = (key || '').trim().replace(/[^\x21-\x7E]/g, '');
+  return clean.startsWith('sk-or-') ? clean : '';
+}
+function hasApiKey() { return !!sanitizeApiKey(getApiKey()); }
 
 function openSettings() {
   populateModelSelects();
@@ -507,6 +512,7 @@ function previewFontSize(v) { document.getElementById('font-size-val').textConte
 function saveSettings() {
   const key = document.getElementById('api-key-input').value.trim();
   const fs = document.getElementById('font-size-range').value;
+  if (key && !sanitizeApiKey(key)) { showToast('API ключ должен начинаться с sk-or-'); return; }
   if (key) setApiKey(key);
   [1,2,3].forEach(level => localStorage.setItem(`mode_model_${level}`, document.getElementById(`mode-model-${level}`).value));
   localStorage.setItem('font_size', fs);

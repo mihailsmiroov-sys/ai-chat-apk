@@ -131,11 +131,17 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
-            fun getApiKey(): String = prefs.getString("openrouter_api_key", "") ?: ""
+            fun getApiKey(): String {
+                val apiKey = sanitizeApiKey(prefs.getString("openrouter_api_key", "") ?: "")
+                if (apiKey.isBlank()) prefs.edit().remove("openrouter_api_key").apply()
+                return apiKey
+            }
 
             @android.webkit.JavascriptInterface
             fun setApiKey(apiKey: String) {
-                prefs.edit().putString("openrouter_api_key", apiKey.trim()).apply()
+                val clean = sanitizeApiKey(apiKey)
+                if (clean.isBlank()) prefs.edit().remove("openrouter_api_key").apply()
+                else prefs.edit().putString("openrouter_api_key", clean).apply()
             }
 
             @android.webkit.JavascriptInterface
@@ -151,10 +157,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     return
                 }
 
-                val apiKey = (prefs.getString("openrouter_api_key", "") ?: "")
-                    .trim()
-                    .replace(Regex("[\\r\\n\\t]"), "")
+                val apiKey = sanitizeApiKey(prefs.getString("openrouter_api_key", "") ?: "")
                 if (apiKey.isBlank()) {
+                    prefs.edit().remove("openrouter_api_key").apply()
                     sendProxyResult(callbackId, null, "Укажите API ключ OpenRouter")
                     return
                 }
@@ -305,5 +310,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     companion object {
         private const val OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+        private fun sanitizeApiKey(value: String): String {
+            val clean = value.trim().filter { it.code in 33..126 }
+            return if (clean.startsWith("sk-or-")) clean else ""
+        }
     }
 }
