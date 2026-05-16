@@ -3,9 +3,13 @@ package com.aichat.app
 import android.annotation.SuppressLint
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
 import android.content.pm.PackageManager
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,12 +21,14 @@ import android.webkit.*
 import android.widget.LinearLayout
 import android.graphics.Color
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.util.Locale
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
@@ -35,6 +41,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private val PERMISSIONS_REQUEST = 1003
     private val httpClient = OkHttpClient()
     private val prefs by lazy { getSharedPreferences("ai_chat_secure", MODE_PRIVATE) }
+    private var pendingCameraFile: File? = null
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
@@ -220,16 +227,23 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == CAMERA_REQUEST) {
-            val bitmap = data?.extras?.get("data") as? Bitmap
-            if (resultCode == Activity.RESULT_OK && bitmap != null) {
-                val out = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
-                val base64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
-                val dataUrl = "data:image/jpeg;base64,$base64"
-                runOnUiThread {
-                    webView.evaluateJavascript("window._androidCameraResult(${JSONObject.quote(dataUrl)})", null)
+            val photoFile = pendingCameraFile
+            pendingCameraFile = null
+            if (resultCode == Activity.RESULT_OK && photoFile != null && photoFile.exists()) {
+                try {
+                    val dataUrl = cameraFileToDataUrl(photoFile)
+                    runOnUiThread {
+                        webView.evaluateJavascript("window._androidCameraResult(${JSONObject.quote(dataUrl)})", null)
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        webView.evaluateJavascript("window._androidCameraError && window._androidCameraError(${JSONObject.quote(e.message ?: "Camera image error")})", null)
+                    }
+                } finally {
+                    photoFile.delete()
                 }
             } else {
+                photoFile?.delete()
                 runOnUiThread { webView.evaluateJavascript("window._androidCameraCancelled && window._androidCameraCancelled()", null) }
             }
             return
@@ -262,11 +276,53 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private fun launchCamera() {
         val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        val cameraDir = File(cacheDir, "camera").apply { mkdirs() }
+        val photoFile = File.createTempFile("photo_", ".jpg", cameraDir)
+        pendingCameraFile = photoFile
+        val photoUri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", photoFile)
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
+        intent.clipData = ClipData.newUri(contentResolver, "photo", photoUri)
+        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
         if (intent.resolveActivity(packageManager) != null) {
             startActivityForResult(intent, CAMERA_REQUEST)
         } else {
+            pendingCameraFile = null
+            photoFile.delete()
             webView.evaluateJavascript("window._androidCameraError && window._androidCameraError('Камера недоступна')", null)
         }
+    }
+
+    private fun cameraFileToDataUrl(file: File): String {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, options)
+        val maxSize = 2048
+        var sample = 1
+        while ((options.outWidth / sample) > maxSize || (options.outHeight / sample) > maxSize) {
+            sample *= 2
+        }
+        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sample }
+        val decoded = BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
+            ?: throw IOException("Не удалось прочитать фото")
+        val rotation = when (ExifInterface(file.absolutePath).getAttributeInt(
+            ExifInterface.TAG_ORIENTATION,
+            ExifInterface.ORIENTATION_NORMAL
+        )) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+        val bitmap = if (rotation != 0f) {
+            val matrix = Matrix().apply { postRotate(rotation) }
+            Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).also {
+                if (it != decoded) decoded.recycle()
+            }
+        } else decoded
+        val out = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 94, out)
+        bitmap.recycle()
+        val base64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        return "data:image/jpeg;base64,$base64"
     }
 
     private fun requestNeededPermissions() {

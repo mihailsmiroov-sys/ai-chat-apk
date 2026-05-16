@@ -326,6 +326,20 @@ textarea.field-input { resize: vertical; min-height: 80px; }
       <button class="seg-btn" type="button" data-len="normal" onclick="setResponseLength('normal')">Обычно</button>
       <button class="seg-btn" type="button" data-len="detailed" onclick="setResponseLength('detailed')">Подробно</button>
     </div>
+    <div class="field-label">Интернет</div>
+    <div class="response-modes" id="web-search-modes">
+      <button class="seg-btn" type="button" data-web="off" onclick="setWebSearchMode('off')">Выкл</button>
+      <button class="seg-btn" type="button" data-web="auto" onclick="setWebSearchMode('auto')">Авто</button>
+      <button class="seg-btn" type="button" data-web="always" onclick="setWebSearchMode('always')">Всегда</button>
+    </div>
+    <div class="api-hint" style="margin-top:-12px;margin-bottom:16px">Поиск оплачивается отдельно: примерно $0.012 за 3 результата или $0.02 за 5 результатов, плюс токены модели.</div>
+    <div class="field-label">Качество фото</div>
+    <div class="response-modes" id="photo-quality-modes">
+      <button class="seg-btn" type="button" data-photo="eco" onclick="setPhotoQuality('eco')">Эконом</button>
+      <button class="seg-btn" type="button" data-photo="normal" onclick="setPhotoQuality('normal')">Обычное</button>
+      <button class="seg-btn" type="button" data-photo="hd" onclick="setPhotoQuality('hd')">HD</button>
+    </div>
+    <div class="api-hint" style="margin-top:-12px;margin-bottom:16px">Для текста на фото лучше HD. Эконом быстрее и дешевле, но детали видны хуже.</div>
     <div class="field-label">Быстрые промпты</div>
     <div class="quick-prompts" id="quick-prompts"></div>
     <div class="field-label">Диагностика</div>
@@ -336,7 +350,9 @@ textarea.field-input { resize: vertical; min-height: 80px; }
       <div class="diag-item"><span>Микрофон</span><span class="diag-status" id="diag-mic">Не проверено</span></div>
       <div class="diag-item"><span>Озвучка</span><span class="diag-status" id="diag-tts">Не проверено</span></div>
       <div class="diag-item"><span>Активная модель</span><span class="diag-status" id="diag-model">Не проверено</span></div>
+      <div class="diag-item"><span>Последняя ошибка</span><span class="diag-status" id="diag-last-error">Нет</span></div>
       <button class="diag-btn" type="button" onclick="runDiagnostics()">Проверить</button>
+      <button class="diag-btn" type="button" onclick="copyLastError()">Скопировать ошибку</button>
     </div>
     <div class="section-divider"></div>
     <div class="field-label">Размер шрифта</div>
@@ -435,6 +451,8 @@ const RESPONSE_HINTS = {
   detailed: 'Отвечай подробно: объясняй причины, шаги и возможные варианты.'
 };
 let lastSentModelId = '';
+const WEB_SEARCH_RE = /(сейчас|сегодня|новост|актуальн|последн|найди|поищи|интернет|сайт|цена|курс|погода|версия|202[0-9]|вчера|завтра)/i;
+const RETRYABLE_ERROR_RE = /(429|rate.?limit|temporarily|overload|provider returned error|timeout|try again|503|502|504|image|vision|multimodal|unsupported)/i;
 
 const MODEL_LABELS = {
   'qwen/qwen3.5-flash-02-23':'Qwen 3.5 Flash',
@@ -503,6 +521,8 @@ function openSettings() {
   document.getElementById('font-size-range').value = fs;
   document.getElementById('font-size-val').textContent = fs + 'px';
   setResponseLength(localStorage.getItem('response_length') || 'normal', false);
+  setWebSearchMode(localStorage.getItem('web_search_mode') || 'off', false);
+  setPhotoQuality(localStorage.getItem('photo_quality') || 'hd', false);
   renderQuickPrompts();
   updateModelHelp();
   document.getElementById('settings-modal').classList.add('open');
@@ -560,8 +580,18 @@ function updateModelHelp() {
 }
 
 function setResponseLength(value, persist = true) {
-  document.querySelectorAll('.seg-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.len === value));
+  document.querySelectorAll('[data-len]').forEach(btn => btn.classList.toggle('active', btn.dataset.len === value));
   if (persist) localStorage.setItem('response_length', value);
+}
+
+function setWebSearchMode(value, persist = true) {
+  document.querySelectorAll('[data-web]').forEach(btn => btn.classList.toggle('active', btn.dataset.web === value));
+  if (persist) localStorage.setItem('web_search_mode', value);
+}
+
+function setPhotoQuality(value, persist = true) {
+  document.querySelectorAll('[data-photo]').forEach(btn => btn.classList.toggle('active', btn.dataset.photo === value));
+  if (persist) localStorage.setItem('photo_quality', value);
 }
 
 // ── THEME ──
@@ -813,6 +843,8 @@ function appendMsgToDOM(m, imgUrls, scroll) {
 }
 
 function showTyping() {
+  removeTyping();
+  document.querySelectorAll('.network-error-msg').forEach(el => el.remove());
   let wrap = document.querySelector('#messages .message-wrap');
   if (!wrap) { document.getElementById('messages').innerHTML = '<div class="message-wrap"></div>'; wrap = document.querySelector('#messages .message-wrap'); }
   const d = document.createElement('div'); d.className = 'msg assistant'; d.id = 'typing-msg';
@@ -900,14 +932,38 @@ window._androidCameraCancelled = function() {};
 window._androidCameraError = function(message) { showToast(message || 'Камера недоступна'); };
 
 function addImageDataUrl(dataUrl, mimeType = 'image/jpeg', fromCamera = false) {
-  pendingImages.push({
-    id: Date.now().toString() + Math.random().toString(36).slice(2,6),
-    base64: dataUrl.split(',')[1],
-    mimeType: dataUrl.match(/data:(.*?);/)?.[1] || mimeType,
-    dataUrl
+  normalizeImageDataUrl(dataUrl, mimeType).then(finalUrl => {
+    pendingImages.push({
+      id: Date.now().toString() + Math.random().toString(36).slice(2,6),
+      base64: finalUrl.split(',')[1],
+      mimeType: finalUrl.match(/data:(.*?);/)?.[1] || mimeType,
+      dataUrl: finalUrl
+    });
+    renderImagePreviews();
+    if (fromCamera) openCameraMore();
+  }).catch(() => {
+    showToast('Не удалось обработать фото');
   });
-  renderImagePreviews();
-  if (fromCamera) openCameraMore();
+}
+
+function normalizeImageDataUrl(dataUrl, mimeType = 'image/jpeg') {
+  const qualityMode = localStorage.getItem('photo_quality') || 'hd';
+  const maxSide = qualityMode === 'eco' ? 1024 : (qualityMode === 'normal' ? 1600 : 2048);
+  const jpegQuality = qualityMode === 'eco' ? 0.82 : (qualityMode === 'normal' ? 0.9 : 0.94);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+      if (scale >= 1 && /^data:image\/jpe?g/i.test(dataUrl)) { resolve(dataUrl); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', jpegQuality));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
 }
 
 // ── VOICE ──
@@ -1030,9 +1086,11 @@ async function doRequest(chat, imgData) {
   abortController = new AbortController();
 
   try {
-    const model = getModeModel();
+    const primaryModel = getModeModel();
+    const result = await callOpenRouterWithFallback(getApiKey(), primaryModel, chat.messages, imgData, abortController.signal);
+    const model = result.model;
     lastSentModelId = model;
-    const reply = await callOpenRouter(getApiKey(), model, chat.messages, imgData, abortController.signal);
+    const reply = result.notice ? `${result.notice}\n\n${result.text}` : result.text;
     removeTyping();
     const aId = Date.now().toString() + 'a';
     const aMsg = { id: aId, role: 'assistant', text: reply, modelId: model, modelLabel: MODEL_LABELS[model] || model };
@@ -1042,7 +1100,7 @@ async function doRequest(chat, imgData) {
     if (autoTTS) speakText(reply, null);
   } catch(err) {
     removeTyping();
-    if (err.name !== 'AbortError') showNetworkError(err.message);
+    if (err.name !== 'AbortError') showNetworkError(err);
   }
   isLoading = false;
   abortController = null;
@@ -1051,6 +1109,41 @@ async function doRequest(chat, imgData) {
 }
 
 // ── API ──
+async function callOpenRouterWithFallback(apiKey, primaryModel, messages, imgData = [], signal) {
+  const models = getFallbackModels(primaryModel).slice(0, 3);
+  let lastError = null;
+  for (const model of models) {
+    try {
+      const text = await callOpenRouter(apiKey, model, messages, imgData, signal);
+      const notice = model !== primaryModel
+        ? `Выбранная модель ${MODEL_LABELS[primaryModel] || primaryModel} сейчас недоступна или перегружена. Ответ получен через ${MODEL_LABELS[model] || model}.`
+        : '';
+      return { text, model, notice };
+    } catch (e) {
+      lastError = e;
+      if (!isRetryableModelError(e) || signal?.aborted) break;
+    }
+  }
+  throw lastError || new Error('Не удалось получить ответ');
+}
+
+function getFallbackModels(primaryModel) {
+  const configured = [primaryModel, getModeModel(1), getModeModel(2), getModeModel(3), DEFAULT_MODE_MODELS[1], DEFAULT_MODE_MODELS[2], DEFAULT_MODE_MODELS[3]];
+  return configured.filter((model, index, arr) => model && arr.indexOf(model) === index);
+}
+
+function isRetryableModelError(error) {
+  return RETRYABLE_ERROR_RE.test(error?.message || String(error || ''));
+}
+
+function shouldUseWebSearch(messages) {
+  const mode = localStorage.getItem('web_search_mode') || 'off';
+  if (mode === 'off') return false;
+  if (mode === 'always') return true;
+  const lastUser = [...messages].reverse().find(m => m.role === 'user');
+  return WEB_SEARCH_RE.test(lastUser?.text || '');
+}
+
 async function callOpenRouter(apiKey, model, messages, imgData = [], signal) {
   const systemPrompt = localStorage.getItem('system_prompt');
   const responseLength = localStorage.getItem('response_length') || 'normal';
@@ -1070,7 +1163,11 @@ async function callOpenRouter(apiKey, model, messages, imgData = [], signal) {
     }
   });
 
-  const bodyStr = JSON.stringify({ model, messages: orMessages });
+  const body = { model, messages: orMessages };
+  if (shouldUseWebSearch(messages)) {
+    body.tools = [{ type: 'openrouter:web_search', parameters: { max_results: 3 } }];
+  }
+  const bodyStr = JSON.stringify(body);
 
   // Android WebView — используем нативный прокси
   if (window.AndroidProxy) {
@@ -1158,16 +1255,41 @@ function shareText(text) {
     showToast('Скопировано (Share не поддерживается)', false);
   }
 }
-function showNetworkError(message) {
-  const text = message || 'Не удалось получить ответ';
-  showToast('Ошибка: ' + text);
+function showNetworkError(error) {
+  const raw = error?.message || String(error || '');
+  const parsed = normalizeApiError(raw);
+  localStorage.setItem('last_api_error', raw);
+  showToast(parsed.title);
   let wrap = document.querySelector('#messages .message-wrap');
   if (!wrap) { document.getElementById('messages').innerHTML = '<div class="message-wrap"></div>'; wrap = document.querySelector('#messages .message-wrap'); }
+  document.querySelectorAll('.network-error-msg').forEach(el => el.remove());
   const d = document.createElement('div');
-  d.className = 'msg assistant';
-  d.innerHTML = `<div class="msg-row"><div class="gem-avatar">!</div><div class="content"><strong>Не удалось получить ответ.</strong><p>${escHtml(text)}</p><button class="btn btn-primary" onclick="retryLastUserMessage()">Повторить</button></div></div>`;
+  d.className = 'msg assistant network-error-msg';
+  d.innerHTML = `<div class="msg-row"><div class="gem-avatar">!</div><div class="content"><strong>${escHtml(parsed.title)}</strong><p>${escHtml(parsed.message)}</p><button class="btn btn-primary" onclick="retryLastUserMessage()">Повторить</button><button class="btn btn-ghost" onclick="openSettings()">Настройки</button></div></div>`;
   wrap.appendChild(d);
   document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+}
+
+function normalizeApiError(raw) {
+  let text = raw || '';
+  try {
+    const data = JSON.parse(text);
+    text = data?.error?.message || data?.message || text;
+  } catch(e) {}
+  const lower = text.toLowerCase();
+  if (/429|rate.?limit|temporarily/.test(lower)) return { title: 'Модель временно перегружена', message: 'Лимит или очередь у провайдера модели. Я уже пробовал запасные модели, если они настроены. Можно повторить позже или выбрать другую модель.' };
+  if (/401|unauthorized|api key|auth/.test(lower)) return { title: 'Проблема с API-ключом', message: 'Проверь OpenRouter API-ключ в настройках. Он должен начинаться с sk-or-.' };
+  if (/402|credit|balance|payment/.test(lower)) return { title: 'Недостаточно средств', message: 'На OpenRouter может не хватать кредитов для этой модели или поиска в интернете.' };
+  if (/403|forbidden|permission/.test(lower)) return { title: 'Нет доступа к модели', message: 'Эта модель недоступна для текущего ключа или провайдера. Попробуй выбрать другую модель.' };
+  if (/404|not found|model/.test(lower)) return { title: 'Модель не найдена', message: 'Модель могла быть переименована или временно убрана у провайдера. Выбери другую модель в настройках.' };
+  if (/network|failed to fetch|timeout/.test(lower)) return { title: 'Проблема с сетью', message: 'Проверь интернет и попробуй отправить сообщение ещё раз.' };
+  return { title: 'Не удалось получить ответ', message: 'Технический текст ошибки сохранён в настройках, раздел “Последняя ошибка”.' };
+}
+
+function copyLastError() {
+  const error = localStorage.getItem('last_api_error') || '';
+  if (!error) { showToast('Ошибок пока нет', false); return; }
+  copyToClipboard(error);
 }
 
 async function retryLastUserMessage() {
@@ -1196,6 +1318,8 @@ async function runDiagnostics() {
   set('diag-tts', (window.AndroidTTS || window.speechSynthesis) ? 'Доступна' : 'Нет поддержки', !!(window.AndroidTTS || window.speechSynthesis));
   const activeModel = getModeModel();
   set('diag-model', `${MODEL_LABELS[activeModel] || activeModel} (${activeModel})`, true);
+  const lastError = localStorage.getItem('last_api_error') || '';
+  set('diag-last-error', lastError ? lastError.slice(0, 80) : 'Нет', !lastError);
 }
 
 function closePermissionsModal() { document.getElementById('permissions-modal').classList.remove('open'); }
@@ -1263,6 +1387,8 @@ async function init() {
     if (!localStorage.getItem(`mode_model_${level}`)) localStorage.setItem(`mode_model_${level}`, DEFAULT_MODE_MODELS[level]);
   });
   if (!localStorage.getItem('response_length')) localStorage.setItem('response_length', 'normal');
+  if (!localStorage.getItem('web_search_mode')) localStorage.setItem('web_search_mode', 'off');
+  if (!localStorage.getItem('photo_quality')) localStorage.setItem('photo_quality', 'hd');
   modelMode = Number(localStorage.getItem('model_mode') || '1');
   updateModelModeUI();
   renderQuickPrompts();
